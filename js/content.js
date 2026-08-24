@@ -616,6 +616,19 @@ function convertParagraph(paragraph) {
       }
     });
 
+    // 全局图片去重（关键）：豆瓣阅读会在同一段落/嵌套 span 里渲染多份相同图片，
+    // 通过 innerHTML 复制路径会绕过逐 img 去重，这里做最终清理——同一 URL 只保留第一份
+    newParagraph.querySelectorAll("img").forEach(function (im) {
+      const u = imgUrlOf(im);
+      if (u) {
+        if (seenImgUrls.has(u)) {
+          im.remove(); // 该图已在其它地方输出过 → 删除重复份
+        } else {
+          seenImgUrls.add(u);
+        }
+      }
+    });
+
     // 判断是否有真实内容（文字、带 URL 的图、SVG）
     let hasContent = !!newParagraph.textContent.trim();
     if (!hasContent) {
