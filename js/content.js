@@ -616,9 +616,11 @@ function convertParagraph(paragraph) {
       }
     });
 
-    // 全局图片去重（关键）：豆瓣阅读会在同一段落/嵌套 span 里渲染多份相同图片，
-    // 通过 innerHTML 复制路径会绕过逐 img 去重，这里做最终清理——同一 URL 只保留第一份
+    // 全局图片去重 + 清理（关键）：
+    // 1) 豆瓣阅读会在同一段落/嵌套 span 里渲染多份相同图片，innerHTML 复制路径会绕过逐 img 去重；
+    // 2) 懒加载中的图片带有 style="opacity: 0.0X" 占位样式，不剥掉的话导出后几乎不可见。
     newParagraph.querySelectorAll("img").forEach(function (im) {
+      im.removeAttribute("style"); // 去掉懒加载占位样式（opacity 等），确保图片可见
       const u = imgUrlOf(im);
       if (u) {
         if (seenImgUrls.has(u)) {
