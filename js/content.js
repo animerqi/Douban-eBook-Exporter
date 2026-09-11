@@ -485,6 +485,28 @@ function downloadImages(map, onProgress) {
   const total = entries.length;
   const CONCURRENCY = 5;
 
+  // 单个图片：大图 → 缩略图 → 稍后重试大图（CDN 偶发拒绝时很有用）
+  function fetchOne(orig, small) {
+    return fetchImage(orig).then(function (dataUri) {
+      if (dataUri) return dataUri;
+      if (small && small !== orig) {
+        return fetchImage(small).then(function (d2) {
+          if (d2) return d2;
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              fetchImage(orig).then(resolve);
+            }, 800);
+          });
+        });
+      }
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          fetchImage(orig).then(resolve);
+        }, 800);
+      });
+    });
+  }
+
   return new Promise(function (resolve) {
     if (total === 0) {
       onProgress(0, 0);
@@ -496,13 +518,7 @@ function downloadImages(map, onProgress) {
       const entry = entries[index++];
       const orig = entry[0];
       const small = entry[1];
-      // 优先大图，失败则用缩略图兜底
-      fetchImage(orig).then(function (dataUri) {
-        if (!dataUri && small && small !== orig) {
-          return fetchImage(small);
-        }
-        return dataUri;
-      }).then(function (dataUri) {
+      fetchOne(orig, small).then(function (dataUri) {
         if (dataUri) result[orig] = dataUri;
         done++;
         onProgress(done, total);
@@ -760,28 +776,56 @@ function processContent() {
 }
 
 // ---------- 主循环 ----------
-// 下载：优先发给后台 Service Worker；失败时退回页面内 <a download> 方式下载
+// 下载：内容脚本创建 blob URL（页面上下文可用）→ 交给后台 Worker 调用 chrome.downloads；
+// 任何一环失败都退回页面内 <a download> 方式，保证一定能下载。
+function anchorDownload(htmlString, filename) {
+  try {
+    const blob = new Blob([htmlString], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 2000);
+    return true;
+  } catch (e) {
+    console.warn("anchor download failed:", e);
+    return false;
+  }
+}
+
 function downloadHtml(htmlString, filename) {
   filename = filename || "content.html";
+  let blobUrl = "";
+  try {
+    const blob = new Blob([htmlString], { type: "text/html;charset=utf-8" });
+    blobUrl = URL.createObjectURL(blob);
+  } catch (e) {
+    // 连 blob URL 都建不了 → 直接 <a download>
+    anchorDownload(htmlString, filename);
+    return;
+  }
+
   chrome.runtime
-    .sendMessage({ action: "download", html: htmlString, filename: filename })
-    .catch(function () {
-      // Worker 不可用时，用 <a download> 兜底（内容脚本可用的标准下载方式）
-      try {
-        const blob = new Blob([htmlString], { type: "text/html;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(function () {
-          a.remove();
-          URL.revokeObjectURL(url);
-        }, 1000);
-      } catch (e) {
-        console.warn("download failed:", e);
+    .sendMessage({ action: "download", url: blobUrl, filename: filename })
+    .then(function (resp) {
+      if (!resp || resp.action !== "downloaded") {
+        anchorDownload(htmlString, filename);
       }
+      setTimeout(function () {
+        URL.revokeObjectURL(blobUrl);
+      }, 5000);
+    })
+    .catch(function () {
+      // Worker 不可用（例如未注册/报错）→ 页面内兜底下载
+      anchorDownload(htmlString, filename);
+      setTimeout(function () {
+        URL.revokeObjectURL(blobUrl);
+      }, 5000);
     });
 }
 
@@ -826,9 +870,18 @@ function finishAndDeliver(reason) {
     });
     // 直接从内容脚本下载，不依赖弹窗是否打开（后台也能自动保存）
     downloadHtml(createDownloadableHtml(capturedContent), "content.html");
+    const embedded = Object.keys(dataUriMap).length;
+    const totalImgs = finalMap.size;
     chrome.runtime.sendMessage({
       action: "completed",
-      text: "完成（" + reason + "）！已保存到下载目录",
+      text:
+        "完成（" +
+        reason +
+        "）！已保存到下载目录；图片内嵌 " +
+        embedded +
+        "/" +
+        totalImgs +
+        (embedded < totalImgs ? "（未内嵌的会尝试联网加载）" : ""),
     }).catch(function () {});
   });
 }

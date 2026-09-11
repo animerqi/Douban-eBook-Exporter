@@ -2,7 +2,11 @@
 
 本项目基于 [Violin9906/Douban-eBook-Exporter](https://github.com/Violin9906/Douban-eBook-Exporter)（v1.0，MIT License）增强而来。
 
-## v1.19（当前）
+## v1.20（当前）
+- **修复后台下载报错**：MV3 的 Service Worker 里没有 `URL.createObjectURL`（朋友机器上报 `URL.createObjectURL is not a function`）；现改为由内容脚本创建 blob URL 再交给 Worker 下载，任一步失败自动退回页面内 `<a download>` 兜底
+- **图片内嵌更稳**：单张图片失败后自动重试（大图 → 缩略图 → 延迟重试大图），并在完成提示里报告「图片内嵌 X/Y」，便于判断导出文件是否离线可用
+
+## v1.19
 - **修复图片不可见**：豆瓣阅读懒加载中的图片带 `style="opacity: 0.0X"` 占位样式（透明度几乎为零），通过 span 内层复制进导出文件后图会"隐形"；现在统一剥掉 img 的 style 属性，图片必定可见
 
 ## v1.18
