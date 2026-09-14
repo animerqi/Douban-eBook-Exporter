@@ -2,7 +2,11 @@
 
 本项目基于 [Violin9906/Douban-eBook-Exporter](https://github.com/Violin9906/Douban-eBook-Exporter)（v1.0，MIT License）增强而来。
 
-## v1.20（当前）
+## v1.21（当前）
+- **关键修复：图片终于能真正内嵌了**！此前用 `fetch(url, {credentials:"include"})` 抓取图片，而豆瓣图片 CDN 返回的是 `Access-Control-Allow-Origin: *`（没有 Allow-Credentials）——浏览器按 CORS 规范**直接拒绝响应**，导致所有导出文件的图片其实一直是远程链接。改用 `credentials:"omit"`（图片本身是公开资源）后，图片会真正内嵌为 data URI，**离线打开也不缺图**
+- 导出图片加 `loading="lazy"`：即使个别图没内嵌成功，浏览器也按需加载，不再一次性发起几百个请求（解决"图片不显示、右键加载才显示"的 CDN 限流问题）
+
+## v1.20
 - **修复后台下载报错**：MV3 的 Service Worker 里没有 `URL.createObjectURL`（朋友机器上报 `URL.createObjectURL is not a function`）；现改为由内容脚本创建 blob URL 再交给 Worker 下载，任一步失败自动退回页面内 `<a download>` 兜底
 - **图片内嵌更稳**：单张图片失败后自动重试（大图 → 缩略图 → 延迟重试大图），并在完成提示里报告「图片内嵌 X/Y」，便于判断导出文件是否离线可用
 

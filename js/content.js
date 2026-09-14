@@ -454,8 +454,11 @@ function chapterChanged() {
 }
 
 // ---------- 图片下载（嵌入为 data URI，离线可读）----------
+// 关键：豆瓣图片 CDN 返回 `Access-Control-Allow-Origin: *`，但没有 Allow-Credentials；
+// 若用 credentials:"include" 浏览器会直接拒绝响应（CORS 规范：带凭据时不允许通配符），
+// 导致图片全部无法内嵌。图片本身是公开资源，用 "omit" 即可正常跨域获取。
 function fetchImage(url) {
-  return fetch(url, { credentials: "include" })
+  return fetch(url, { credentials: "omit", mode: "cors" })
     .then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.blob();
@@ -596,7 +599,7 @@ function convertParagraph(paragraph) {
           seenImgUrls.add(imgOrig);
           pendingImgMap.set(imgOrig, imgSmall);
           newParagraph.innerHTML +=
-            '<img data-orig-src="' +
+            '<img loading="lazy" data-orig-src="' +
             escapeHtml(imgOrig) +
             '" src="' +
             escapeHtml(imgSmall) +
@@ -637,6 +640,7 @@ function convertParagraph(paragraph) {
     // 2) 懒加载中的图片带有 style="opacity: 0.0X" 占位样式，不剥掉的话导出后几乎不可见。
     newParagraph.querySelectorAll("img").forEach(function (im) {
       im.removeAttribute("style"); // 去掉懒加载占位样式（opacity 等），确保图片可见
+      im.setAttribute("loading", "lazy"); // 按需加载：避免打开文件时一次性几百个图片请求
       const u = imgUrlOf(im);
       if (u) {
         if (seenImgUrls.has(u)) {
